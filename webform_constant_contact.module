@@ -1,0 +1,70 @@
+<?php
+
+/**
+ * @file
+ * Contains webform_constant_contact.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Form\FormStateInterface;
+
+/**
+ * Implements hook_help().
+ */
+function webform_constant_contact_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the webform_constant_contact module.
+    case 'help.page.webform_constant_contact':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('submits webform data to constant contact') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function webform_constant_contact_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+
+
+  if ('webform_submission_subscribe_test_form' == $form_id || 'webform_submission_subscribe_add_form' == $form_id){
+    $form['actions']['submit']['#submit'][] = "webform_submitted_values";
+  }
+}
+
+function webform_submitted_values(&$form, FormStateInterface $form_state){
+  $values = $form_state->getValues();
+  $selectedLists = $values['would_you_like_to_join_any_of_our_subgroups_'];
+  $lists = [];
+
+  foreach ($selectedLists as $selectedList){
+    if ($selectedList != 0){
+      $listObj = new \stdClass();
+      $listObj->id = $selectedList;
+      array_push($lists, $listObj);
+    }
+  }
+
+  $constantContact = new \stdClass();
+  $constantContact->first_name = $values['name']['first'];
+  $constantContact->last_name = $values['name']['last'];
+  $constantContact->email_addresses = [['email_address' => $values['email']]];
+  $constantContact->company_name = $values['organization'];
+  $constantContact->lists = $lists;
+
+  $baseUrl = 'https://api.constantcontact.com/v2/contacts?api_key=g2jnh338hrwqxtzkuhxzkrqt';
+  $header = ['headers' => [
+    'Authorization' => 'Bearer 4f2f5ecd-0156-412e-bffc-cf95b4ce7958',
+    'Content-Type' => 'application/json',
+    'Accept' => 'application/json'
+  ]];
+  $http_client = Drupal::service('http_client');
+  $response = $http_client->post($baseUrl, [
+    'debug' => TRUE,
+    'body' => json_encode($constantContact),
+    'headers' => $header['headers']
+  ]);
+}
