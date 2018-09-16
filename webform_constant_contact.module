@@ -29,16 +29,24 @@ function webform_constant_contact_help($route_name, RouteMatchInterface $route_m
  */
 function webform_constant_contact_form_alter(&$form, FormStateInterface $form_state, $form_id) {
 
-
   if ('webform_submission_subscribe_test_form' == $form_id || 'webform_submission_subscribe_add_form' == $form_id){
     $form['actions']['submit']['#submit'][] = "webform_submitted_values";
   }
 }
 
 function webform_submitted_values(&$form, FormStateInterface $form_state){
+  $config = Drupal::config('webform_constant_contact.config');
+  $api_key = $config->get('api_key');
+  $token = $config->get('cc_token');
+
   $values = $form_state->getValues();
   $selectedLists = $values['would_you_like_to_join_any_of_our_subgroups_'];
   $lists = [];
+  $generalListId = $config->get('general_list');
+  if (!empty($generalListId)){
+
+    array_push($selectedLists, $config->get('general_list'));
+  }
 
   foreach ($selectedLists as $selectedList){
     if ($selectedList != 0){
@@ -53,18 +61,93 @@ function webform_submitted_values(&$form, FormStateInterface $form_state){
   $constantContact->last_name = $values['name']['last'];
   $constantContact->email_addresses = [['email_address' => $values['email']]];
   $constantContact->company_name = $values['organization'];
-  $constantContact->lists = $lists;
 
-  $baseUrl = 'https://api.constantcontact.com/v2/contacts?api_key=g2jnh338hrwqxtzkuhxzkrqt';
+  
+
   $header = ['headers' => [
-    'Authorization' => 'Bearer 4f2f5ecd-0156-412e-bffc-cf95b4ce7958',
+
+    'Authorization' => 'Bearer '.$token,
     'Content-Type' => 'application/json',
     'Accept' => 'application/json'
   ]];
   $http_client = Drupal::service('http_client');
-  $response = $http_client->post($baseUrl, [
-    'debug' => TRUE,
-    'body' => json_encode($constantContact),
-    'headers' => $header['headers']
+  try{
+    print($values['email']);
+    $contact = getContact($values['email'], $api_key, $token, $http_client);
+
+    if (empty($contact)){
+
+      $baseUrl = 'https://api.constantcontact.com/v2/contacts?api_key='.$api_key;
+      $constantContact->lists = $lists;
+
+      $response = $http_client->post($baseUrl, [
+        'debug' => TRUE,
+        'body' => json_encode($constantContact),
+        'headers' => $header['headers']
+      ]);
+    }
+    else{
+      $listIds = [];
+      foreach ($contact->lists as $list){
+        array_push($listIds, $list->id);
+      }
+      $contact->lists = objectInArray($lists, $listIds);
+
+      $baseUrl = 'https://api.constantcontact.com/v2/contacts/'.$contact->id.'?action_by=ACTION_BY_OWNER&api_key='.$api_key;
+      $response = $http_client->put($baseUrl, [
+        'debug' => TRUE,
+        'body' => json_encode($contact),
+        'Content-Type' => 'application/json',
+        'headers' => $header['headers']
+      ]);
+    }
+  }
+  catch (Exception $e){
+    print_r($e->getMessage());die('***');
+  }
+}
+
+/**
+ * Get constant contact by email address
+ *
+ * @param $email
+ * @param $api_key
+ * @param $token
+ * @param \GuzzleHttp\Client $http_client
+ *
+ * @return mixed
+ */
+function getContact($email, $api_key, $token, GuzzleHttp\Client $http_client){
+  $url = 'https://api.constantcontact.com/v2/contacts?email='.urlencode($email).'&status=ALL&limit=50&api_key='.$api_key;
+  $headers = [
+    'Authorization' => 'Bearer ' . $token,
+  ];
+  $response = $http_client->get($url, [
+    'Content-Type' => 'application/json',
+    'headers' => $headers
   ]);
+  $responseObj = json_decode($response->getBody()->getContents())->results[0];
+
+  return $responseObj;
+}
+
+function objectInArray($arr, array $listIds){
+
+  $updatedIds = $listIds;
+
+  foreach ($arr as $item){
+    array_push($updatedIds, $item->id);
+  }
+
+  $updatedIds =  array_unique($updatedIds);
+
+  $updatedIdObj = [];
+  foreach($updatedIds as $updatedId){
+    $obj = new \stdClass();
+    $obj->id = $updatedId;
+
+    array_push($updatedIdObj, $obj);
+  }
+
+  return $updatedIdObj;
 }

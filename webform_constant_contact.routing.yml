@@ -1,0 +1,9 @@
+webform_constant_contact.config_form:
+  path: '/admin/config/webform_constant_contact/config'
+  defaults:
+    _form: '\Drupal\webform_constant_contact\Form\ConstantContantConfigForm'
+    _title: 'Constant Contant Settings'
+  requirements:
+    _permission: 'access administration pages'
+  options:
+    _admin_route: TRUE
